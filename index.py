@@ -5,9 +5,16 @@ import mysql.connector
 import base64
 import shutil
 import html
+import logging
 from datetime import datetime
 from pathlib import Path
 from bottle import route, run, template, post, request, static_file
+
+logging.basicConfig(
+    filename='api.log',
+    level=logging.ERROR,
+    format='%(asctime)s %(levelname)s:%(message)s'
+)
 
 @route('/')
 def home():
@@ -72,7 +79,7 @@ def Registro():
                 db.close()
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 return {"R": -2}
 
         return {"R": 0, "D": R}
@@ -112,7 +119,7 @@ def Login():
                         R = cursor.fetchall()
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 db.close()
                 return {"R": -2}
 
@@ -142,7 +149,7 @@ def Login():
                         return {"R": 0, "D": T}
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 db.close()
                 return {"R": -4}
 
@@ -185,13 +192,14 @@ def Imagen():
 
         try:
                 with db.cursor() as cursor:
-                        cursor.execute(
-                                f'select id_Usuario from AccesoToken where token = "{TKN}"'
-                        )
-                        R = cursor.fetchall()
+                    cursor.execute(
+                            "SELECT id_Usuario FROM AccesoToken WHERE token = %s",
+                            (TKN,)
+                            )
+                    R = cursor.fetchall()
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 db.close()
                 return {"R": -2}
 
@@ -229,7 +237,7 @@ def Imagen():
                         return {"R": 0, "D": idImagen}
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 db.close()
                 return {"R": -3}
 
@@ -259,27 +267,29 @@ def Descargar():
 
         try:
                 with db.cursor() as cursor:
-                        cursor.execute(
-                                'select id_Usuario from AccesoToken where token = "' + TKN + '"'
-                        )
+                    cursor.execute(
+                            "SELECT id_Usuario FROM AccesoToken WHERE token = %s",
+                            (TKN,)
+                            )
 
-                        R = cursor.fetchall()
+                    R = cursor.fetchall()
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 db.close()
                 return {"R": -2}
 
         try:
                 with db.cursor() as cursor:
-                        cursor.execute(
-                                'Select name,ruta from Imagen where id = ' + str(idImagen)
-                        )
+                    cursor.execute(
+                            "SELECT name, ruta FROM Imagen WHERE id = %s",
+                            (idImagen,)
+                            )
 
-                        R = cursor.fetchall()
+                    R = cursor.fetchall()
 
         except Exception as e:
-                print(e)
+                logging.error(str(e))
                 db.close()
                 return {"R": -3}
 
@@ -295,8 +305,8 @@ if __name__ == '__main__':
         run(
                 host='0.0.0.0',
                 port=8080,
-                debug=True,
+                debug=False,
                 server='cheroot',
                 certfile='localhost+1.pem',
                 keyfile='localhost+1-key.pem'
-        )
+                )

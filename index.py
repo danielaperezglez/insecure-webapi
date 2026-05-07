@@ -167,6 +167,11 @@ def Imagen():
         if not request.json:
                 return {"R": -1}
 
+        extensiones_permitidas = ["png", "jpg", "jpeg", "gif"]
+
+        if request.json["ext"].lower() not in extensiones_permitidas:
+                return {"R": -5, "MSG": "Extensión no permitida"}
+
         R = (
                 'name' in request.json and
                 'data' in request.json and

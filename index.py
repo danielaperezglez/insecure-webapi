@@ -64,14 +64,14 @@ def Registro():
                 return {"R": -1}
 
         R = 'uname' in request.json and 'email' in request.json and 'password' in request.json
-
         if not R:
                 return {"R": -1}
 
         try:
                 with db.cursor() as cursor:
                         cursor.execute(
-                                f'insert into Usuario values(null,"{request.json["uname"]}","{request.json["email"]}",md5("{request.json["password"]}"))'
+                            "INSERT INTO Usuario VALUES(NULL,%s,%s,md5(%s))",
+                            (request.json["uname"], request.json["email"], request.json["password"])
                         )
                         R = cursor.lastrowid
                         db.commit()
@@ -101,21 +101,15 @@ def Login():
                 return {"R": -1}
 
         R = 'uname' in request.json and 'password' in request.json
-
         if not R:
                 return {"R": -1}
 
         try:
                 with db.cursor() as cursor:
-                        print(
-                                f'Select id from Usuario where uname = "{request.json["uname"]}" and password = md5("{request.json["password"]}")'
-                        )
-
                         cursor.execute(
-                    "SELECT id FROM Usuario WHERE uname=%s AND password=md5(%s)",
-                    (request.json["uname"], request.json["password"])
-                    )
-
+                            "SELECT id FROM Usuario WHERE uname=%s AND password=md5(%s)",
+                            (request.json["uname"], request.json["password"])
+                        )
                         R = cursor.fetchall()
 
         except Exception as e:
@@ -123,29 +117,21 @@ def Login():
                 db.close()
                 return {"R": -2}
 
-        if not R:
-                db.close()
-                return {"R": -3}
-
-        T = getToken()
-
-        with open("/tmp/log", "a") as log:
-                log.write(f'Delete from AccesoToken where id_Usuario = "{R[0][0]}"\n')
-                log.write(f'insert into AccesoToken values({R[0][0]},"{T}",now())\n')
 
         try:
                 with db.cursor() as cursor:
                         cursor.execute(
-                                f'Delete from AccesoToken where id_Usuario = "{R[0][0]}"'
+                            "DELETE FROM AccesoToken WHERE id_Usuario=%s",
+                            (R[0][0],)
                         )
 
                         cursor.execute(
-                                f'insert into AccesoToken values({R[0][0]},"{T}",now())'
+                            "INSERT INTO AccesoToken VALUES(%s,%s,NOW())",
+                            (R[0][0], T)
                         )
 
                         db.commit()
                         db.close()
-
                         return {"R": 0, "D": T}
 
         except Exception as e:
@@ -197,11 +183,11 @@ def Imagen():
 
         try:
                 with db.cursor() as cursor:
-                    cursor.execute(
+                        cursor.execute(
                             "SELECT id_Usuario FROM AccesoToken WHERE token = %s",
                             (TKN,)
-                            )
-                    R = cursor.fetchall()
+                        )
+                        R = cursor.fetchall()
 
         except Exception as e:
                 logging.error(str(e))
@@ -210,35 +196,36 @@ def Imagen():
 
         id_Usuario = R[0][0]
 
-        with open(f'tmp/{id_Usuario}', "wb") as imagen:
-                imagen.write(
-                        base64.b64decode(request.json['data'].encode())
-                )
-
         try:
                 with db.cursor() as cursor:
                         cursor.execute(
-                                f'insert into Imagen values(null,"{request.json["name"]}","img/",{id_Usuario})'
+                            "INSERT INTO Imagen VALUES(NULL,%s,%s,%s)",
+                            (request.json["name"], "img/", id_Usuario)
                         )
 
                         cursor.execute(
-                                'select max(id) as idImagen from Imagen where id_Usuario = ' + str(id_Usuario)
+                            "SELECT MAX(id) AS idImagen FROM Imagen WHERE id_Usuario=%s",
+                            (id_Usuario,)
                         )
 
                         R = cursor.fetchall()
                         idImagen = R[0][0]
 
+                        ruta = f"img/{idImagen}.{request.json['ext']}"
+
                         cursor.execute(
-                                'update Imagen set ruta = "img/' + str(idImagen) + '.' + str(request.json['ext']) + '" where id = ' + str(idImagen)
+                            "UPDATE Imagen SET ruta=%s WHERE id=%s",
+                            (ruta, idImagen)
                         )
 
                         db.commit()
 
                         shutil.move(
-                                'tmp/' + str(id_Usuario),
-                                'img/' + str(idImagen) + '.' + str(request.json['ext'])
+                                "tmp/" + str(id_Usuario),
+                                ruta
                         )
 
+                        return {"R": 0, "D": idImagen}
                         return {"R": 0, "D": idImagen}
 
         except Exception as e:
@@ -287,7 +274,7 @@ def Descargar():
         try:
                 with db.cursor() as cursor:
                     cursor.execute(
-                            "SELECT name, ruta FROM Imagen WHERE id = %s",
+                            "SELECT name, ruta FROM Imagen WHERE id = %ss",
                             (idImagen,)
                             )
 
@@ -314,4 +301,6 @@ if __name__ == '__main__':
                 server='cheroot',
                 certfile='localhost+1.pem',
                 keyfile='localhost+1-key.pem'
-                )
+                
+
+)

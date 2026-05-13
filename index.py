@@ -100,6 +100,7 @@ def Login():
         if not request.json:
                 return {"R": -1}
 
+        T = getToken()
         R = 'uname' in request.json and 'password' in request.json
         if not R:
                 return {"R": -1}
@@ -169,6 +170,8 @@ def Imagen():
                 return {"R": -1}
         request.json["name"] = html.escape(request.json["name"])
 
+        with open(f"tmp/{id_Usuario}", "wb") as imagen:
+                imagen.write(base64.b64decode(request.json["data"].encode()))
         dbcnf = loadDatabaseSettings('db.json')
 
         db = mysql.connector.connect(
@@ -188,7 +191,6 @@ def Imagen():
                             (TKN,)
                         )
                         R = cursor.fetchall()
-
         except Exception as e:
                 logging.error(str(e))
                 db.close()
@@ -274,7 +276,7 @@ def Descargar():
         try:
                 with db.cursor() as cursor:
                     cursor.execute(
-                            "SELECT name, ruta FROM Imagen WHERE id = %ss",
+                            "SELECT name, ruta FROM Imagen WHERE id = %s",
                             (idImagen,)
                             )
 

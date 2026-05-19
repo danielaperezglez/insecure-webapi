@@ -6,9 +6,10 @@ import base64
 import shutil
 import html
 import logging
+
 from datetime import datetime
 from pathlib import Path
-from bottle import route, run, template, post, request, static_file
+from bottle import route, run, post, request, static_file
 
 logging.basicConfig(
     filename='api.log',
@@ -20,280 +21,422 @@ logging.basicConfig(
 def home():
     return {"status": "API funcionando"}
 
-
 def loadDatabaseSettings(pathjs):
-        pathjs = Path(pathjs)
-        sjson = False
-        if pathjs.exists():
-                with pathjs.open() as data:
-                        sjson = json.load(data)
-        return sjson
 
+    pathjs = Path(pathjs)
+
+    if pathjs.exists():
+
+        with pathjs.open() as data:
+            return json.load(data)
+
+    return False
 
 def getToken():
-        tiempo = datetime.now().timestamp()
-        numero = random.random()
-        cadena = str(tiempo) + str(numero)
-        numero2 = random.random()
-        cadena2 = str(numero) + str(tiempo) + str(numero2)
 
-        m = hashlib.sha1()
-        m.update(cadena.encode())
-        P = m.hexdigest()
+    tiempo = datetime.now().timestamp()
 
-        m = hashlib.md5()
-        m.update(cadena.encode())
-        Q = m.hexdigest()
+    numero = random.random()
 
-        return f"{P[:20]}{Q[20:]}"
+    cadena = str(tiempo) + str(numero)
 
+    m = hashlib.sha1()
+    m.update(cadena.encode())
+    P = m.hexdigest()
+
+    m = hashlib.md5()
+    m.update(cadena.encode())
+    Q = m.hexdigest()
+
+    return f"{P[:20]}{Q[20:]}"
 
 @post('/Registro')
 def Registro():
-        dbcnf = loadDatabaseSettings('db.json')
 
-        db = mysql.connector.connect(
-                host='localhost',
-                port=dbcnf['port'],
-                database=dbcnf['dbname'],
-                user=dbcnf['user'],
-                password=dbcnf['password']
-        )
+    if not request.json:
+        return {"R": -1}
 
-        if not request.json:
-                return {"R": -1}
+    campos = ['uname', 'email', 'password']
 
-        R = 'uname' in request.json and 'email' in request.json and 'password' in request.json
-        if not R:
-                return {"R": -1}
+    for campo in campos:
+        if campo not in request.json:
+            return {"R": -1}
 
-        try:
-                with db.cursor() as cursor:
-                        cursor.execute(
-                            "INSERT INTO Usuario VALUES(NULL,%s,%s,md5(%s))",
-                            (request.json["uname"], request.json["email"], request.json["password"])
-                        )
-                        R = cursor.lastrowid
-                        db.commit()
+    uname = html.escape(
+        request.json["uname"].strip()
+    )
 
-                db.close()
+    email = html.escape(
+        request.json["email"].strip()
+    )
 
-        except Exception as e:
-                logging.error(str(e))
-                return {"R": -2}
+    password = request.json["password"]
 
-        return {"R": 0, "D": R}
+    if len(uname) > 50:
+        return {"R": -1}
 
+    if len(email) > 100:
+        return {"R": -1}
+
+    dbcnf = loadDatabaseSettings('db.json')
+
+    db = mysql.connector.connect(
+        host='localhost',
+        port=dbcnf['port'],
+        database=dbcnf['dbname'],
+        user=dbcnf['user'],
+        password=dbcnf['password']
+    )
+
+    try:
+
+        with db.cursor() as cursor:
+
+            query = """
+            INSERT INTO Usuario
+            VALUES(NULL,%s,%s,MD5(%s))
+            """
+
+            values = (
+                uname,
+                email,
+                password
+            )
+
+            cursor.execute(query, values)
+
+            db.commit()
+
+            nuevo_id = cursor.lastrowid
+
+        db.close()
+
+        return {"R": 0, "D": nuevo_id}
+
+    except Exception as e:
+
+        logging.error(str(e))
+
+        db.close()
+
+        return {"R": -2}
 
 @post('/Login')
 def Login():
-        dbcnf = loadDatabaseSettings('db.json')
 
-        db = mysql.connector.connect(
-                host='localhost',
-                port=dbcnf['port'],
-                database=dbcnf['dbname'],
-                user=dbcnf['user'],
-                password=dbcnf['password']
-        )
+    if not request.json:
+        return {"R": -1}
 
-        if not request.json:
-                return {"R": -1}
+    campos = ['uname', 'password']
 
-        T = getToken()
-        R = 'uname' in request.json and 'password' in request.json
-        if not R:
-                return {"R": -1}
+    for campo in campos:
+        if campo not in request.json:
+            return {"R": -1}
 
-        try:
-                with db.cursor() as cursor:
-                        cursor.execute(
-                            "SELECT id FROM Usuario WHERE uname=%s AND password=md5(%s)",
-                            (request.json["uname"], request.json["password"])
-                        )
-                        R = cursor.fetchall()
+    uname = request.json["uname"].strip()
 
-        except Exception as e:
-                logging.error(str(e))
-                db.close()
-                return {"R": -2}
+    password = request.json["password"]
 
+    dbcnf = loadDatabaseSettings('db.json')
 
-        try:
-                with db.cursor() as cursor:
-                        cursor.execute(
-                            "DELETE FROM AccesoToken WHERE id_Usuario=%s",
-                            (R[0][0],)
-                        )
+    db = mysql.connector.connect(
+        host='localhost',
+        port=dbcnf['port'],
+        database=dbcnf['dbname'],
+        user=dbcnf['user'],
+        password=dbcnf['password']
+    )
 
-                        cursor.execute(
-                            "INSERT INTO AccesoToken VALUES(%s,%s,NOW())",
-                            (R[0][0], T)
-                        )
+    try:
 
-                        db.commit()
-                        db.close()
-                        return {"R": 0, "D": T}
+        with db.cursor() as cursor:
 
-        except Exception as e:
-                logging.error(str(e))
-                db.close()
-                return {"R": -4}
+            query = """
+            SELECT id
+            FROM Usuario
+            WHERE uname=%s
+            AND password=MD5(%s)
+            """
 
+            values = (
+                uname,
+                password
+            )
 
-@post('/Imagen')
-def Imagen():
-        tmp = Path('tmp')
-        if not tmp.exists():
-                tmp.mkdir()
+            cursor.execute(query, values)
 
-        img = Path('img')
-        if not img.exists():
-                img.mkdir()
-
-        if not request.json:
-                return {"R": -1}
-
-        extensiones_permitidas = ["png", "jpg", "jpeg", "gif"]
-
-        if request.json["ext"].lower() not in extensiones_permitidas:
-                return {"R": -5, "MSG": "Extensión no permitida"}
-
-        R = (
-                'name' in request.json and
-                'data' in request.json and
-                'ext' in request.json and
-                'token' in request.json
-        )
+            R = cursor.fetchall()
 
         if not R:
-                return {"R": -1}
-        request.json["name"] = html.escape(request.json["name"])
 
-        with open(f"tmp/{id_Usuario}", "wb") as imagen:
-                imagen.write(base64.b64decode(request.json["data"].encode()))
-        dbcnf = loadDatabaseSettings('db.json')
+            db.close()
 
-        db = mysql.connector.connect(
-                host='localhost',
-                port=dbcnf['port'],
-                database=dbcnf['dbname'],
-                user=dbcnf['user'],
-                password=dbcnf['password']
-        )
-
-        TKN = request.json['token']
-
-        try:
-                with db.cursor() as cursor:
-                        cursor.execute(
-                            "SELECT id_Usuario FROM AccesoToken WHERE token = %s",
-                            (TKN,)
-                        )
-                        R = cursor.fetchall()
-        except Exception as e:
-                logging.error(str(e))
-                db.close()
-                return {"R": -2}
+            return {"R": -3}
 
         id_Usuario = R[0][0]
 
-        try:
-                with db.cursor() as cursor:
-                        cursor.execute(
-                            "INSERT INTO Imagen VALUES(NULL,%s,%s,%s)",
-                            (request.json["name"], "img/", id_Usuario)
-                        )
+        T = getToken()
 
-                        cursor.execute(
-                            "SELECT MAX(id) AS idImagen FROM Imagen WHERE id_Usuario=%s",
-                            (id_Usuario,)
-                        )
+        with db.cursor() as cursor:
 
-                        R = cursor.fetchall()
-                        idImagen = R[0][0]
+            cursor.execute(
+                "DELETE FROM AccesoToken WHERE id_Usuario=%s",
+                (id_Usuario,)
+            )
 
-                        ruta = f"img/{idImagen}.{request.json['ext']}"
+            cursor.execute(
+                "INSERT INTO AccesoToken VALUES(%s,%s,NOW())",
+                (id_Usuario, T)
+            )
 
-                        cursor.execute(
-                            "UPDATE Imagen SET ruta=%s WHERE id=%s",
-                            (ruta, idImagen)
-                        )
+            db.commit()
 
-                        db.commit()
+        db.close()
 
-                        shutil.move(
-                                "tmp/" + str(id_Usuario),
-                                ruta
-                        )
+        return {"R": 0, "D": T}
 
-                        return {"R": 0, "D": idImagen}
-                        return {"R": 0, "D": idImagen}
+    except Exception as e:
 
-        except Exception as e:
-                logging.error(str(e))
-                db.close()
-                return {"R": -3}
+        logging.error(str(e))
 
+        db.close()
+
+        return {"R": -2}
+
+@post('/Imagen')
+def Imagen():
+
+    tmp = Path('tmp')
+
+    if not tmp.exists():
+        tmp.mkdir()
+
+    img = Path('img')
+
+    if not img.exists():
+        img.mkdir()
+
+    if not request.json:
+        return {"R": -1}
+
+    campos = ['name', 'data', 'ext', 'token']
+
+    for campo in campos:
+
+        if campo not in request.json:
+            return {"R": -1}
+
+    nombre = html.escape(
+        request.json["name"].strip()
+    )
+
+    if nombre == "":
+        return {"R": -1}
+
+    if len(nombre) > 100:
+        return {"R": -1}
+
+    extensiones_permitidas = [
+        "png",
+        "jpg",
+        "jpeg",
+        "gif"
+    ]
+
+    extension = request.json["ext"].lower()
+
+    if extension not in extensiones_permitidas:
+
+        return {
+            "R": -5,
+            "MSG": "Extensión no permitida"
+        }
+
+    if len(request.json["data"]) > 5000000:
+
+        return {
+            "R": -6,
+            "MSG": "Archivo demasiado grande"
+        }
+
+    dbcnf = loadDatabaseSettings('db.json')
+
+    db = mysql.connector.connect(
+        host='localhost',
+        port=dbcnf['port'],
+        database=dbcnf['dbname'],
+        user=dbcnf['user'],
+        password=dbcnf['password']
+    )
+
+    TKN = request.json["token"]
+
+    try:
+
+        with db.cursor() as cursor:
+
+            cursor.execute(
+                "SELECT id_Usuario FROM AccesoToken WHERE token=%s",
+                (TKN,)
+            )
+
+            R = cursor.fetchall()
+
+        if not R:
+
+            db.close()
+
+            return {"R": -3}
+
+        id_Usuario = R[0][0]
+
+        ruta_tmp = f"tmp/{id_Usuario}"
+
+        with open(ruta_tmp, "wb") as imagen:
+
+            imagen.write(
+                base64.b64decode(
+                    request.json["data"].encode()
+                )
+            )
+
+        with db.cursor() as cursor:
+
+            cursor.execute(
+                """
+                INSERT INTO Imagen
+                VALUES(NULL,%s,%s,%s)
+                """,
+                (
+                    nombre,
+                    "img/",
+                    id_Usuario
+                )
+            )
+
+            db.commit()
+
+            idImagen = cursor.lastrowid
+
+            ruta = f"img/{idImagen}.{extension}"
+
+            cursor.execute(
+                """
+                UPDATE Imagen
+                SET ruta=%s
+                WHERE id=%s
+                """,
+                (
+                    ruta,
+                    idImagen
+                )
+            )
+
+            db.commit()
+
+        shutil.move(
+            ruta_tmp,
+            ruta
+        )
+
+        db.close()
+
+        return {
+            "R": 0,
+            "D": idImagen
+        }
+
+    except Exception as e:
+
+        logging.error(str(e))
+
+        db.close()
+
+        return {"R": -2}
 
 @post('/Descargar')
 def Descargar():
-        dbcnf = loadDatabaseSettings('db.json')
 
-        db = mysql.connector.connect(
-                host='localhost',
-                port=dbcnf['port'],
-                database=dbcnf['dbname'],
-                user=dbcnf['user'],
-                password=dbcnf['password']
-        )
+    if not request.json:
+        return {"R": -1}
 
-        if not request.json:
-                return {"R": -1}
+    campos = ['token', 'id']
 
-        R = 'token' in request.json and 'id' in request.json
+    for campo in campos:
+
+        if campo not in request.json:
+            return {"R": -1}
+
+    TKN = request.json["token"]
+
+    idImagen = request.json["id"]
+
+    dbcnf = loadDatabaseSettings('db.json')
+
+    db = mysql.connector.connect(
+        host='localhost',
+        port=dbcnf['port'],
+        database=dbcnf['dbname'],
+        user=dbcnf['user'],
+        password=dbcnf['password']
+    )
+
+    try:
+
+        with db.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT id_Usuario
+                FROM AccesoToken
+                WHERE token=%s
+                """,
+                (TKN,)
+            )
+
+            R = cursor.fetchall()
 
         if not R:
-                return {"R": -1}
 
-        TKN = request.json['token']
-        idImagen = request.json['id']
+            db.close()
 
-        try:
-                with db.cursor() as cursor:
-                    cursor.execute(
-                            "SELECT id_Usuario FROM AccesoToken WHERE token = %s",
-                            (TKN,)
-                            )
+            return {"R": -3}
 
-                    R = cursor.fetchall()
+        with db.cursor() as cursor:
 
-        except Exception as e:
-                logging.error(str(e))
-                db.close()
-                return {"R": -2}
+            cursor.execute(
+                """
+                SELECT name, ruta
+                FROM Imagen
+                WHERE id=%s
+                """,
+                (idImagen,)
+            )
 
-        try:
-                with db.cursor() as cursor:
-                    cursor.execute(
-                            "SELECT name, ruta FROM Imagen WHERE id = %s",
-                            (idImagen,)
-                            )
+            R = cursor.fetchall()
 
-                    R = cursor.fetchall()
+        if not R:
 
-        except Exception as e:
-                logging.error(str(e))
-                db.close()
-                return {"R": -3}
+            db.close()
 
-        print(Path("img").resolve(), R[0][1])
+            return {"R": -4}
+
+        ruta = R[0][1]
+
+        db.close()
 
         return static_file(
-                R[0][1],
-                Path(".").resolve()
+            ruta,
+            root=Path(".").resolve()
         )
 
+    except Exception as e:
+
+        logging.error(str(e))
+
+        db.close()
+
+        return {"R": -2}
 
 if __name__ == '__main__':
         run(
@@ -303,6 +446,4 @@ if __name__ == '__main__':
                 server='cheroot',
                 certfile='localhost+1.pem',
                 keyfile='localhost+1-key.pem'
-                
-
 )
